@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { getSupabaseBrowserClient } from "@/lib/supabase/client";
+import type { AuthChangeEvent, Session } from "@supabase/supabase-js";
 
 const supabase = getSupabaseBrowserClient();
 
@@ -15,6 +16,9 @@ type GruposPorTipo = {
   [tipo: string]: PersonaGrupo[];
 };
 
+type RelPersonaGrupo = { id_grupo: number; id_persona: string | null };
+type PersonaData = { id: string; nombre: string };
+
 // ─── Hook: obtener id_comunidad del usuario autenticado ────────────────────────
 function useIdComunidad() {
   const [idComunidad, setIdComunidad] = useState<string | null>(null);
@@ -22,7 +26,7 @@ function useIdComunidad() {
 
   useEffect(() => {
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
-      async (_event, session) => {
+      async (_event: AuthChangeEvent, session: Session | null) => {
         if (!session?.user) { setLoadingComunidad(false); return; }
 
         const { data } = await supabase
@@ -75,16 +79,16 @@ function useUltimosGrupos(idComunidad: string | null) {
           .eq("tipo", tipo)
           .eq("id_generacion", genData.id_generacion)
           .eq("id_comunidad", idComunidad)
-          .order("id_grupo");
+          .order("id_grupo") as { data: RelPersonaGrupo[] | null };
 
         if (!relData || relData.length === 0) continue;
 
         // 3. Nombres de personas
-        const ids = [...new Set(relData.map((r) => r.id_persona).filter(Boolean))];
+        const ids = [...new Set(relData.map((r) => r.id_persona).filter((id): id is string => !!id))];
         const { data: personasData } = await supabase
           .from("personas")
           .select("id, nombre")
-          .in("id", ids);
+          .in("id", ids) as { data: PersonaData[] | null };
 
         const personasMap = new Map((personasData ?? []).map((p) => [p.id, p.nombre]));
 
@@ -93,7 +97,7 @@ function useUltimosGrupos(idComunidad: string | null) {
         for (const row of relData) {
           if (!agrupado[row.id_grupo])
             agrupado[row.id_grupo] = { id_grupo: row.id_grupo, personas: [] };
-          const nombre = personasMap.get(row.id_persona);
+          const nombre = personasMap.get(row.id_persona ?? "");
           if (nombre) agrupado[row.id_grupo].personas.push(nombre);
         }
 
