@@ -1,12 +1,9 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { createClient } from "@supabase/supabase-js";
+import { getSupabaseBrowserClient } from "@/lib/supabase/client";
 
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-);
+const supabase = getSupabaseBrowserClient();
 
 // ─── Types ─────────────────────────────────────────────────────────────────────
 type PersonaGrupo = {
@@ -18,7 +15,34 @@ type GruposPorTipo = {
   [tipo: string]: PersonaGrupo[];
 };
 
-// ─── Hook principal ────────────────────────────────────────────────────────────
+// ─── Hook: obtener id_comunidad del usuario autenticado ────────────────────────
+function useIdComunidad() {
+  const [idComunidad, setIdComunidad] = useState<string | null>(null);
+  const [loadingComunidad, setLoadingComunidad] = useState(true);
+
+  useEffect(() => {
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(
+      async (_event, session) => {
+        if (!session?.user) { setLoadingComunidad(false); return; }
+
+        const { data } = await supabase
+          .from("personas")
+          .select("id_comunidad")
+          .eq("auth_user_id", session.user.id)
+          .maybeSingle();
+
+        setIdComunidad(data?.id_comunidad ?? null);
+        setLoadingComunidad(false);
+      }
+    );
+
+    return () => subscription.unsubscribe();
+  }, []);
+
+  return { idComunidad, loadingComunidad };
+}
+
+// ─── Hook: cargar grupos ───────────────────────────────────────────────────────
 function useUltimosGrupos(idComunidad: string | null) {
   const [grupos, setGrupos] = useState<GruposPorTipo>({});
   const [loading, setLoading] = useState(true);
@@ -150,8 +174,7 @@ function TarjetaGrupos({
 
 // ─── Página ────────────────────────────────────────────────────────────────────
 export default function IndexPage() {
-  // TODO: reemplazar por el id_comunidad del usuario autenticado
-  const idComunidad = process.env.NEXT_PUBLIC_DEFAULT_COMUNIDAD ?? null;
+  const { idComunidad, loadingComunidad } = useIdComunidad();
   const { grupos, loading } = useUltimosGrupos(idComunidad);
 
   const tarjetas = [
@@ -159,6 +182,8 @@ export default function IndexPage() {
     { tipo: "salmo",      label: "Salmo",       icono: "📖", color: "#5C4A1E" },
     { tipo: "eucaristia", label: "Eucaristía",  icono: "✝️", color: "#A0522D" },
   ];
+
+  const isLoading = loadingComunidad || loading;
 
   return (
     <>
@@ -203,7 +228,6 @@ export default function IndexPage() {
           text-transform: uppercase;
         }
 
-        /* Escritorio: 3 columnas que se reparten todo el ancho */
         .cards-grid {
           display: grid;
           grid-template-columns: repeat(3, 1fr);
@@ -211,18 +235,15 @@ export default function IndexPage() {
           align-items: start;
         }
 
-        /* Tablet: 2 columnas */
         @media (max-width: 900px) {
           .cards-grid { grid-template-columns: repeat(2, 1fr); }
         }
 
-        /* Móvil: 1 columna en fila vertical */
         @media (max-width: 560px) {
           .page-wrapper { padding: 1.2rem 1rem 3rem; }
           .cards-grid { grid-template-columns: 1fr; }
         }
 
-        /* Card */
         .card {
           background: #fffdf7;
           border: 1px solid #e0d8c0;
@@ -266,7 +287,6 @@ export default function IndexPage() {
           justify-content: flex-end;
         }
 
-        /* Grupos */
         .grupo { margin-bottom: 1.1rem; }
         .grupo-header {
           font-family: 'Playfair Display', serif;
@@ -294,7 +314,21 @@ export default function IndexPage() {
           padding: 1rem 0;
         }
 
-        /* Botón */
+        .no-comunidad {
+          text-align: center;
+          padding: 4rem 1rem;
+          color: #7a6840;
+          font-size: 0.95rem;
+          line-height: 1.7;
+        }
+        .no-comunidad strong {
+          display: block;
+          font-family: 'Playfair Display', serif;
+          font-size: 1.1rem;
+          color: #3a2c14;
+          margin-bottom: 0.4rem;
+        }
+
         .btn-copiar {
           color: #fff;
           border: none;
@@ -308,7 +342,6 @@ export default function IndexPage() {
         }
         .btn-copiar:hover { opacity: 0.88; }
 
-        /* Loading */
         .status-center { text-align: center; padding: 4rem 1rem; color: #7a6840; }
         .spinner {
           display: inline-block;
@@ -328,10 +361,16 @@ export default function IndexPage() {
           <p>Grupos de celebración · Última generación</p>
         </header>
 
-        {loading ? (
+        {isLoading ? (
           <div className="status-center">
             <div className="spinner" />
             <p>Cargando grupos...</p>
+          </div>
+        ) : !idComunidad ? (
+          <div className="no-comunidad">
+            <strong>Sin comunidad asignada</strong>
+            Tu cuenta no está vinculada a ninguna comunidad.<br />
+            Contacta con el administrador para que te añadan.
           </div>
         ) : (
           <div className="cards-grid">
