@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { createClient } from "@/lib/supabase/client";
+import { getSupabaseBrowserClient } from "@/lib/supabase/client";
 import { logout } from "@/app/actions/auth";
 
 // ─── Types ─────────────────────────────────────────────────────────────────────
@@ -14,13 +14,17 @@ type GruposPorTipo = {
   [tipo: string]: PersonaGrupo[];
 };
 
+type GenRow = { id_generacion: number };
+type RelRow = { id_grupo: number; id_persona: string };
+type PersonaRow = { id: string; nombre: string };
+
 // ─── Hook principal ────────────────────────────────────────────────────────────
 function useUltimosGrupos(idComunidad: string) {
   const [grupos, setGrupos] = useState<GruposPorTipo>({});
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const supabase = createClient();
+    const supabase = getSupabaseBrowserClient();
 
     async function fetchGrupos() {
       setLoading(true);
@@ -29,36 +33,35 @@ function useUltimosGrupos(idComunidad: string) {
 
       for (const tipo of tipos) {
         // 1. Última generación
-        const { data: genData } = await supabase
+        const { data: genData } = (await supabase
           .from("grupos")
           .select("id_generacion")
           .eq("tipo", tipo)
           .eq("id_comunidad", idComunidad)
           .order("id_generacion", { ascending: false })
           .limit(1)
-          .maybeSingle();
+          .maybeSingle()) as { data: GenRow | null; error: unknown };
 
         if (!genData) continue;
 
         // 2. Filas de rel_persona_grupo
-        const { data: relData } = await supabase
+        const { data: relData } = (await supabase
           .from("rel_persona_grupo")
           .select("id_grupo, id_persona")
           .eq("tipo", tipo)
           .eq("id_generacion", genData.id_generacion)
           .eq("id_comunidad", idComunidad)
-          .order("id_grupo");
+          .order("id_grupo")) as { data: RelRow[] | null; error: unknown };
 
         if (!relData || relData.length === 0) continue;
 
         // 3. Nombres de personas
-        const ids = [
-          ...new Set(relData.map((r) => r.id_persona).filter(Boolean)),
-        ];
-        const { data: personasData } = await supabase
+        const ids = [...new Set(relData.map((r) => r.id_persona).filter(Boolean))];
+
+        const { data: personasData } = (await supabase
           .from("personas")
           .select("id, nombre")
-          .in("id", ids);
+          .in("id", ids)) as { data: PersonaRow[] | null; error: unknown };
 
         const personasMap = new Map(
           (personasData ?? []).map((p) => [p.id, p.nombre])
