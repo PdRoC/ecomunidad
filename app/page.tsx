@@ -29,17 +29,22 @@ function useIdComunidad() {
   useEffect(() => {
     // 1. Leer sesión activa inmediatamente al montar
     async function loadUser() {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) { setLoadingComunidad(false); return; }
+      try {
+        const { data: { user } } = await supabase.auth.getUser();
+        if (!user) { setLoadingComunidad(false); return; }
 
-      const { data } = await supabase
-        .from("personas")
-        .select("id_comunidad")
-        .eq("auth_user_id", user.id)
-        .maybeSingle();
+        const { data } = await supabase
+          .from("personas")
+          .select("id_comunidad")
+          .eq("auth_user_id", user.id)
+          .maybeSingle();
 
-      setIdComunidad(data?.id_comunidad ?? null);
-      setLoadingComunidad(false);
+        setIdComunidad(data?.id_comunidad ?? null);
+      } catch (e) {
+        console.error("Error loading user:", e);
+      } finally {
+        setLoadingComunidad(false);
+      }
     }
 
     loadUser();
