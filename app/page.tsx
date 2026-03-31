@@ -25,10 +25,31 @@ function useIdComunidad() {
   const [loadingComunidad, setLoadingComunidad] = useState(true);
 
   useEffect(() => {
+    // 1. Leer sesión activa inmediatamente al montar
+    async function loadUser() {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) { setLoadingComunidad(false); return; }
+
+      const { data } = await supabase
+        .from("personas")
+        .select("id_comunidad")
+        .eq("auth_user_id", user.id)
+        .maybeSingle();
+
+      setIdComunidad(data?.id_comunidad ?? null);
+      setLoadingComunidad(false);
+    }
+
+    loadUser();
+
+    // 2. Escuchar cambios posteriores (logout, refresco de token...)
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       async (_event: AuthChangeEvent, session: Session | null) => {
-        if (!session?.user) { setLoadingComunidad(false); return; }
-
+        if (!session?.user) {
+          setIdComunidad(null);
+          setLoadingComunidad(false);
+          return;
+        }
         const { data } = await supabase
           .from("personas")
           .select("id_comunidad")
