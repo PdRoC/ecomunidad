@@ -1,3 +1,5 @@
+// Ruta: ./app/actions/auth.ts
+
 "use server";
 
 import { revalidatePath } from "next/cache";
@@ -12,7 +14,7 @@ export async function loginWithGoogle() {
   const { data, error } = await supabase.auth.signInWithOAuth({
     provider: "google",
     options: {
-      redirectTo: `${window.location.origin}/auth/callback`,
+      redirectTo: redirectTo,
     },
   });
 

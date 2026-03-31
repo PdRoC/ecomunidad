@@ -1,3 +1,5 @@
+// Ruta: ./components/GruposClient.tsx
+
 "use client";
 
 import { useEffect, useState } from "react";

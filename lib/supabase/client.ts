@@ -1,3 +1,5 @@
+// Ruta: ./lib/supabase/client.ts
+
 import { createBrowserClient } from "@supabase/ssr";
 
 let client: ReturnType<typeof createBrowserClient> | null = null;
