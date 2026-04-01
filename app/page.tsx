@@ -6,8 +6,6 @@ import { useEffect, useState } from "react";
 import { getSupabaseBrowserClient } from "@/lib/supabase/client";
 import type { AuthChangeEvent, Session } from "@supabase/supabase-js";
 
-const supabase = getSupabaseBrowserClient();
-
 // ─── Types ─────────────────────────────────────────────────────────────────────
 type PersonaGrupo = {
   id_grupo: number;
@@ -27,7 +25,8 @@ function useIdComunidad() {
   const [loadingComunidad, setLoadingComunidad] = useState(true);
 
   useEffect(() => {
-    // 1. Leer sesión activa inmediatamente al montar
+    const supabase = getSupabaseBrowserClient(); // ← mover aquí
+
     async function loadUser() {
       try {
         const { data: { user } } = await supabase.auth.getUser();
@@ -43,13 +42,12 @@ function useIdComunidad() {
       } catch (e) {
         console.error("Error loading user:", e);
       } finally {
-        setLoadingComunidad(false); // ← siempre se ejecuta
+        setLoadingComunidad(false);
       }
     }
 
     loadUser();
 
-    // 2. Escuchar cambios posteriores (logout, refresco de token...)
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       async (_event: AuthChangeEvent, session: Session | null) => {
         if (!session?.user) {
@@ -57,14 +55,19 @@ function useIdComunidad() {
           setLoadingComunidad(false);
           return;
         }
-        const { data } = await supabase
-          .from("personas")
-          .select("id_comunidad")
-          .eq("auth_user_id", session.user.id)
-          .maybeSingle();
+        try {
+          const { data } = await supabase
+            .from("personas")
+            .select("id_comunidad")
+            .eq("auth_user_id", session.user.id)
+            .maybeSingle();
 
-        setIdComunidad(data?.id_comunidad ?? null);
-        setLoadingComunidad(false);
+          setIdComunidad(data?.id_comunidad ?? null);
+        } catch (e) {
+          console.error("Error en auth state change:", e);
+        } finally {
+          setLoadingComunidad(false);
+        }
       }
     );
 
@@ -81,6 +84,8 @@ function useUltimosGrupos(idComunidad: string | null) {
 
   useEffect(() => {
     if (!idComunidad) { setLoading(false); return; }
+
+    const supabase = getSupabaseBrowserClient();
 
     async function fetchGrupos() {
       setLoading(true);
