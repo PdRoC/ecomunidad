@@ -85,52 +85,27 @@ function useUltimosGrupos(idComunidad: string | null) {
 
     async function fetchGrupos() {
       setLoading(true);
+
+      const { data, error } = await supabase
+        .from("vista_ultimos_grupos")
+        .select("tipo, id_grupo, nombre")
+        .eq("id_comunidad", idComunidad)
+        .order("id_grupo");
+
+      if (error || !data) { setLoading(false); return; }
+
+      // Agrupar en memoria
       const resultado: GruposPorTipo = {};
-      const tipos = ["peticion", "salmo", "eucaristia"];
 
-      for (const tipo of tipos) {
-        // 1. Última generación
-        const { data: genData } = await supabase
-          .from("grupos")
-          .select("id_generacion")
-          .eq("tipo", tipo)
-          .eq("id_comunidad", idComunidad)
-          .order("id_generacion", { ascending: false })
-          .limit(1)
-          .maybeSingle();
-
-        if (!genData) continue;
-
-        // 2. Filas de rel_persona_grupo
-        const { data: relData } = await supabase
-          .from("rel_persona_grupo")
-          .select("id_grupo, id_persona")
-          .eq("tipo", tipo)
-          .eq("id_generacion", genData.id_generacion)
-          .eq("id_comunidad", idComunidad)
-          .order("id_grupo") as { data: RelPersonaGrupo[] | null };
-
-        if (!relData || relData.length === 0) continue;
-
-        // 3. Nombres de personas
-        const ids = [...new Set(relData.map((r) => r.id_persona).filter((id): id is string => !!id))];
-        const { data: personasData } = await supabase
-          .from("personas")
-          .select("id, nombre")
-          .in("id", ids) as { data: PersonaData[] | null };
-
-        const personasMap = new Map((personasData ?? []).map((p) => [p.id, p.nombre]));
-
-        // 4. Agrupar
-        const agrupado: { [key: number]: PersonaGrupo } = {};
-        for (const row of relData) {
-          if (!agrupado[row.id_grupo])
-            agrupado[row.id_grupo] = { id_grupo: row.id_grupo, personas: [] };
-          const nombre = personasMap.get(row.id_persona ?? "");
-          if (nombre) agrupado[row.id_grupo].personas.push(nombre);
+      for (const row of data) {
+        if (!resultado[row.tipo]) resultado[row.tipo] = [];
+        const tipoArr = resultado[row.tipo];
+        let grupo = tipoArr.find(g => g.id_grupo === row.id_grupo);
+        if (!grupo) {
+          grupo = { id_grupo: row.id_grupo, personas: [] };
+          tipoArr.push(grupo);
         }
-
-        resultado[tipo] = Object.values(agrupado).sort((a, b) => a.id_grupo - b.id_grupo);
+        if (row.nombre) grupo.personas.push(row.nombre);
       }
 
       setGrupos(resultado);
