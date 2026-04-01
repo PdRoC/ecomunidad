@@ -25,47 +25,43 @@ function useIdComunidad() {
   const [loadingComunidad, setLoadingComunidad] = useState(true);
 
   useEffect(() => {
-    const supabase = getSupabaseBrowserClient(); // ← mover aquí
+    const supabase = getSupabaseBrowserClient();
 
-    async function loadUser() {
+    async function fetchComunidad(userId: string) {
       try {
-        const { data: { user } } = await supabase.auth.getUser();
-        if (!user) return;
-
-        const { data } = await supabase
+        const { data, error } = await supabase
           .from("personas")
           .select("id_comunidad")
-          .eq("auth_user_id", user.id)
+          .eq("auth_user_id", userId)
           .maybeSingle();
-
         setIdComunidad(data?.id_comunidad ?? null);
       } catch (e) {
-        console.error("Error loading user:", e);
+        console.error("Error:", e);
+        setIdComunidad(null);
       } finally {
         setLoadingComunidad(false);
       }
     }
 
-    loadUser();
+    // ✅ Leer sesión existente al montar
+    supabase.auth.getSession().then(({ data }: { data: { session: Session | null } }) => {
+      const session = data.session;
+      if (session?.user) {
+        fetchComunidad(session.user.id);
+      } else {
+        setIdComunidad(null);
+        setLoadingComunidad(false);
+      }
+    });
 
+    // ✅ Escuchar cambios futuros (login, logout, refresh)
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
-      async (_event: AuthChangeEvent, session: Session | null) => {
-        if (!session?.user) {
+      (_event: AuthChangeEvent, session: Session | null) => {
+        if (_event === "INITIAL_SESSION") return; // ya lo manejó getSession
+        if (session?.user) {
+          fetchComunidad(session.user.id);
+        } else {
           setIdComunidad(null);
-          setLoadingComunidad(false);
-          return;
-        }
-        try {
-          const { data } = await supabase
-            .from("personas")
-            .select("id_comunidad")
-            .eq("auth_user_id", session.user.id)
-            .maybeSingle();
-
-          setIdComunidad(data?.id_comunidad ?? null);
-        } catch (e) {
-          console.error("Error en auth state change:", e);
-        } finally {
           setLoadingComunidad(false);
         }
       }

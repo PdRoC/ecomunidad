@@ -14,5 +14,4 @@ export function getSupabaseBrowserClient() {
   return client;
 }
 
-// Alias para compatibilidad
 export const createClient = getSupabaseBrowserClient;
