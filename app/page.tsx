@@ -31,7 +31,7 @@ function useIdComunidad() {
     async function loadUser() {
       try {
         const { data: { user } } = await supabase.auth.getUser();
-        if (!user) { setLoadingComunidad(false); return; }
+        if (!user) return;
 
         const { data } = await supabase
           .from("personas")
@@ -43,7 +43,7 @@ function useIdComunidad() {
       } catch (e) {
         console.error("Error loading user:", e);
       } finally {
-        setLoadingComunidad(false);
+        setLoadingComunidad(false); // ← siempre se ejecuta
       }
     }
 
