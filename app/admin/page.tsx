@@ -273,36 +273,36 @@ export default function AdminPage() {
                   </span>
                 </div>
 
-                {/* Grupos en columnas */}
-                <div
-                  className="grid gap-4 p-4"
-                  style={{
-                    gridTemplateColumns: `repeat(${opcion.grupos.length}, minmax(0, 1fr))`,
-                  }}
-                >
-                  {opcion.grupos.map((grupo) => (
-                    <div key={grupo.idGrupo}>
-                      <p className="text-xs font-semibold uppercase tracking-wide text-gray-400 mb-2">
-                        Grupo {grupo.idGrupo}
-                      </p>
-                      <ul className="space-y-1">
-                        {grupo.personas.map((p) => {
-                          const claseColor = colorPersonaEnGrupo(p.id, grupo.personas);
-                          return (
-                            <li
-                              key={p.id}
-                              className="flex items-center justify-between rounded-md bg-gray-50 px-3 py-1.5 text-sm"
-                            >
-                              <span className="text-gray-800">{p.nombre}</span>
-                              <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-semibold ml-2 ${claseColor}`}>
-                                {p.coef}
-                              </span>
-                            </li>
-                          );
-                        })}
-                      </ul>
-                    </div>
-                  ))}
+                {/* Grupos en columnas — scroll horizontal en móvil */}
+                <div className="overflow-x-auto">
+                  <div
+                    className="flex gap-3 p-4"
+                    style={{ minWidth: `${opcion.grupos.length * 160}px` }}
+                  >
+                    {opcion.grupos.map((grupo) => (
+                      <div key={grupo.idGrupo} className="flex-1 min-w-[140px]">
+                        <p className="text-xs font-semibold uppercase tracking-wide text-gray-400 mb-2">
+                          Grupo {grupo.idGrupo}
+                        </p>
+                        <ul className="space-y-1">
+                          {grupo.personas.map((p) => {
+                            const claseColor = colorPersonaEnGrupo(p.id, grupo.personas);
+                            return (
+                              <li
+                                key={p.id}
+                                className="flex items-center justify-between rounded-md bg-gray-50 px-2 py-1.5 text-sm gap-1"
+                              >
+                                <span className="text-gray-800 truncate">{p.nombre}</span>
+                                <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-semibold shrink-0 ${claseColor}`}>
+                                  {p.coef}
+                                </span>
+                              </li>
+                            );
+                          })}
+                        </ul>
+                      </div>
+                    ))}
+                  </div>
                 </div>
               </div>
             ))}
