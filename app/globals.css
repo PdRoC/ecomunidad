@@ -1,26 +1,184 @@
-@import "tailwindcss";
+/* ─── Imports ─────────────────────────────────────────────────────────────── */
+@import url('https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;600;700&family=Lato:wght@300;400;700&display=swap');
 
+/* ─── Reset ───────────────────────────────────────────────────────────────── */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+/* ─── Variables ───────────────────────────────────────────────────────────── */
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  --font-display: 'Playfair Display', serif;
+  --font-body: 'Lato', sans-serif;
+
+  /* Paleta */
+  --color-bg:           #f5f0e8;
+  --color-surface:      #fffdf7;
+  --color-surface-alt:  #faf6ec;
+  --color-border:       #e0d8c0;
+  --color-border-alt:   #e8e0c8;
+  --color-border-inner: #ede5cc;
+  --color-hover-row:    #f5eedc;
+  --color-divider:      #d4c9a8;
+
+  /* Texto */
+  --color-text:         #2c2416;
+  --color-text-heading: #3a2c14;
+  --color-text-muted:   #7a6840;
+  --color-text-subtle:  #9a8860;
+
+  /* Celebraciones */
+  --color-peticion:   #8B6914;
+  --color-salmo:      #5C4A1E;
+  --color-eucaristia: #A0522D;
+
+  /* Feedback */
+  --color-success: #4caf50;
+
+  /* Sombras */
+  --shadow-card:       0 2px 12px rgba(60,40,10,0.06);
+  --shadow-card-hover: 0 6px 24px rgba(60,40,10,0.13);
+
+  /* Radios */
+  --radius-card: 8px;
+  --radius-btn:  5px;
 }
 
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
-}
-
+/* ─── Base ────────────────────────────────────────────────────────────────── */
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  font-family: var(--font-body);
+  background: var(--color-bg);
+  color: var(--color-text);
+  min-height: 100vh;
 }
+
+/* ─── Tipografía compartida ───────────────────────────────────────────────── */
+.heading-display {
+  font-family: var(--font-display);
+  color: var(--color-text-heading);
+}
+
+/* ─── Card ────────────────────────────────────────────────────────────────── */
+.card {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-card);
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  box-shadow: var(--shadow-card);
+  transition: box-shadow 0.2s;
+}
+.card:hover { box-shadow: var(--shadow-card-hover); }
+
+.card-header {
+  padding: 1rem 1.25rem;
+  background: var(--color-surface-alt);
+  border-bottom: 1px solid var(--color-border-alt);
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+}
+.card-icon { font-size: 1.2rem; }
+.card-title {
+  font-family: var(--font-display);
+  font-size: 1.15rem;
+  font-weight: 600;
+  color: var(--color-text-heading);
+}
+
+.card-body {
+  padding: 1.25rem;
+  flex: 1;
+  overflow-y: auto;
+}
+
+.card-footer {
+  padding: 0.85rem 1.25rem;
+  background: var(--color-surface-alt);
+  border-top: 1px solid var(--color-border-alt);
+  display: flex;
+  justify-content: flex-end;
+}
+
+/* ─── Page header ─────────────────────────────────────────────────────────── */
+.page-header {
+  text-align: center;
+  margin-bottom: 2rem;
+  padding-bottom: 1.5rem;
+  border-bottom: 1px solid var(--color-divider);
+  position: relative;
+}
+.page-header::after {
+  content: '✦';
+  position: absolute;
+  bottom: -0.65rem; left: 50%;
+  transform: translateX(-50%);
+  background: var(--color-bg);
+  padding: 0 0.5rem;
+  color: var(--color-peticion);
+}
+.page-header h1 {
+  font-family: var(--font-display);
+  font-size: clamp(1.5rem, 3vw, 2.2rem);
+  font-weight: 700;
+  color: var(--color-text-heading);
+}
+.page-header p {
+  margin-top: 0.4rem;
+  font-size: 0.9rem;
+  color: var(--color-text-muted);
+  font-weight: 300;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+/* ─── Status / Loading ────────────────────────────────────────────────────── */
+.status-center { text-align: center; padding: 4rem 1rem; color: var(--color-text-muted); }
+
+.spinner {
+  display: inline-block;
+  width: 2rem; height: 2rem;
+  border: 3px solid var(--color-divider);
+  border-top-color: var(--color-peticion);
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+  margin-bottom: 0.8rem;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* ─── Estados vacíos / sin comunidad ─────────────────────────────────────── */
+.empty-msg {
+  font-size: 0.88rem;
+  color: var(--color-text-subtle);
+  font-style: italic;
+  text-align: center;
+  padding: 1rem 0;
+}
+
+.no-comunidad {
+  text-align: center;
+  padding: 4rem 1rem;
+  color: var(--color-text-muted);
+  font-size: 0.95rem;
+  line-height: 1.7;
+}
+.no-comunidad strong {
+  display: block;
+  font-family: var(--font-display);
+  font-size: 1.1rem;
+  color: var(--color-text-heading);
+  margin-bottom: 0.4rem;
+}
+
+/* ─── Botón copiar ────────────────────────────────────────────────────────── */
+.btn-copiar {
+  color: #fff;
+  border: none;
+  padding: 0.45rem 1.1rem;
+  border-radius: var(--radius-btn);
+  font-family: var(--font-body);
+  font-size: 0.85rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: opacity 0.2s, background-color 0.3s;
+}
+.btn-copiar:hover { opacity: 0.88; }

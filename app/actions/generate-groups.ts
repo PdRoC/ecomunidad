@@ -13,7 +13,28 @@ type Persona = {
 };
 
 type Distribucion = Record<number, string[]>;
-type Pesos = Record<string, Record<string, number>>;
+
+// MatrizPesos encapsula la estructura de datos optimizada (puntos 1 y 2).
+// Internamente usa un Float32Array triangular indexado por enteros,
+// pero expone la misma interfaz que antes hacia el resto del código.
+type MatrizPesos = {
+  // Devuelve el peso entre dos personas por su UUID (igual que la función
+  // peso() anterior, pero usando el array plano internamente).
+  get(a: string, b: string): number;
+
+  // Coste incremental de añadir `personaId` a un grupo (punto 1):
+  // solo suma los pares con la persona nueva, no recalcula los pares internos.
+  costeIncremental(personaId: string, grupo: string[]): number;
+
+  // Coste completo de un grupo (necesario al calcular el coef total final).
+  costeGrupo(miembros: string[]): number;
+
+  // Conflictividad de cada persona (suma de sus pesos al cuadrado con todos).
+  conflictividad(id: string): number;
+
+  // Para calcularCoefsPorPersona: devuelve los pesos individuales con el resto.
+  pesosContra(personaId: string, resto: string[]): number[];
+};
 
 type Opcion = {
   coef: number;
@@ -33,34 +54,126 @@ function sample<T>(arr: T[]): T {
   return arr[Math.floor(Math.random() * arr.length)];
 }
 
-function peso(pesos: Pesos, a: string, b: string): number {
-  return pesos[a]?.[b] ?? pesos[b]?.[a] ?? 0;
-}
+// ─── Punto 2: construcción de la matriz plana ────────────────────────────────
+//
+// Dado un conjunto de personas con UUIDs, asignamos a cada una un índice
+// entero 0..n-1 y almacenamos todos los pesos en un Float32Array triangular.
+//
+// El array tiene n*(n-1)/2 posiciones. Para i < j, el peso entre las personas
+// con índices i y j se guarda en la posición:
+//
+//   idx = i*n - i*(i+1)/2 + (j - i - 1)
+//
+// Esto equivale a "coger la fila i de la matriz triangular superior y avanzar
+// hasta la columna j". Como solo guardamos la mitad superior, el acceso es
+// siempre simétrico: peso(a,b) == peso(b,a).
+//
+// Ventajas respecto al objeto anidado Record<string, Record<string, number>>:
+//   · Un solo lookup de entero en lugar de dos búsquedas de string en hash map.
+//   · Memoria contigua → la CPU puede precachear los valores adyacentes.
+//   · Float32 en lugar de number (64 bits) → la mitad de memoria por valor.
 
-function costeGrupo(miembros: string[], pesos: Pesos): number {
-  let total = 0;
-  for (let i = 0; i < miembros.length; i++)
-    for (let j = i + 1; j < miembros.length; j++)
-      total += peso(pesos, miembros[i], miembros[j]) ** 2;
-  return total;
-}
-
-function costeIncremental(personaId: string, grupoActual: string[], pesos: Pesos): number {
-  return grupoActual.reduce((s, m) => s + peso(pesos, personaId, m) ** 2, 0);
-}
-
-function calcularConflictividad(
+function construirMatrizPesos(
   personas: Pick<Persona, "id">[],
-  pesos: Pesos
-): Record<string, number> {
-  const mapa: Record<string, number> = {};
-  for (const { id } of personas) {
-    let suma = 0;
-    for (const val of Object.values(pesos[id] ?? {})) suma += val ** 2;
-    for (const fila of Object.values(pesos)) suma += (fila[id] ?? 0) ** 2;
-    mapa[id] = suma;
+  pesosRaw: { id_persona: string; id_pareja: string; coef_repeticion: number | null }[]
+): MatrizPesos {
+  const n = personas.length;
+
+  // Mapa UUID → índice entero (O(1) en los accesos calientes)
+  const idx = new Map<string, number>();
+  personas.forEach((p, i) => idx.set(p.id, i));
+
+  // Array triangular plano. Inicializado a cero (personas sin historial = 0).
+  const mat = new Float32Array(n * (n - 1) / 2);
+
+  // Función de traducción de par (i, j) con i < j a posición en el array.
+  function pos(i: number, j: number): number {
+    return i * n - Math.trunc(i * (i + 1) / 2) + (j - i - 1);
   }
-  return mapa;
+
+  // Rellenamos el array con los datos de Supabase.
+  for (const row of pesosRaw) {
+    const i = idx.get(row.id_persona);
+    const j = idx.get(row.id_pareja);
+    if (i === undefined || j === undefined) continue;
+    const [lo, hi] = i < j ? [i, j] : [j, i];
+    mat[pos(lo, hi)] = row.coef_repeticion ?? 0;
+  }
+
+  // Función interna de acceso por índice (no por UUID).
+  function getByIdx(i: number, j: number): number {
+    if (i === j) return 0;
+    const [lo, hi] = i < j ? [i, j] : [j, i];
+    return mat[pos(lo, hi)];
+  }
+
+  return {
+    get(a: string, b: string): number {
+      const i = idx.get(a);
+      const j = idx.get(b);
+      if (i === undefined || j === undefined) return 0;
+      return getByIdx(i, j);
+    },
+
+    // ─── Punto 1: coste incremental con caché ────────────────────────────
+    //
+    // Al evaluar si añadir `personaId` a un grupo, lo único que cambia en
+    // el coste total son los pares que involucran a esa persona.
+    // Los pares internos del grupo (P1↔P2, P1↔P3, etc.) NO cambian.
+    //
+    // Por eso esta función SOLO suma los pesos entre `personaId` y cada
+    // miembro actual del grupo, elevados al cuadrado.  Es O(k) donde k
+    // es el tamaño del grupo, frente al O(k²) del recálculo completo.
+    //
+    // En busquedaLocal esto se usa para calcular el delta de un swap:
+    //   delta = costeIncremental(pB, restA) + costeIncremental(pA, restB)
+    //         - costeIncremental(pA, restA) - costeIncremental(pB, restB)
+    // Si delta < 0, el swap mejora la solución. Los pares internos de
+    // restA y restB se cancelan en la resta y ni siquiera hay que calcularlos.
+    costeIncremental(personaId: string, grupo: string[]): number {
+      const pi = idx.get(personaId);
+      if (pi === undefined) return 0;
+      let total = 0;
+      for (const m of grupo) {
+        const mi = idx.get(m);
+        if (mi === undefined) continue;
+        const v = getByIdx(pi, mi);
+        total += v * v;
+      }
+      return total;
+    },
+
+    costeGrupo(miembros: string[]): number {
+      let total = 0;
+      for (let a = 0; a < miembros.length; a++) {
+        const ai = idx.get(miembros[a]);
+        if (ai === undefined) continue;
+        for (let b = a + 1; b < miembros.length; b++) {
+          const bi = idx.get(miembros[b]);
+          if (bi === undefined) continue;
+          const v = getByIdx(ai, bi);
+          total += v * v;
+        }
+      }
+      return total;
+    },
+
+    conflictividad(id: string): number {
+      const pi = idx.get(id);
+      if (pi === undefined) return 0;
+      let suma = 0;
+      for (let j = 0; j < n; j++) {
+        if (j === pi) continue;
+        const v = getByIdx(pi, j);
+        suma += v * v;
+      }
+      return suma;
+    },
+
+    pesosContra(personaId: string, resto: string[]): number[] {
+      return resto.map((m) => this.get(personaId, m));
+    },
+  };
 }
 
 // ─── Fase 1: construcción GRASP ───────────────────────────────────────────────
@@ -68,7 +181,7 @@ function calcularConflictividad(
 function construirSolucion(
   personas: Persona[],
   numGrupos: number,
-  pesos: Pesos
+  mat: MatrizPesos
 ): Distribucion {
   const plazas: Record<number, number> = {};
   const grupos: Distribucion           = {};
@@ -87,8 +200,8 @@ function construirSolucion(
       .filter((g) => plazas[g] + persona.numero <= minPlazas + TOLERANCIA)
       .sort(
         (a, b) =>
-          costeIncremental(persona.id, grupos[a], pesos) -
-          costeIncremental(persona.id, grupos[b], pesos)
+          mat.costeIncremental(persona.id, grupos[a]) -
+          mat.costeIncremental(persona.id, grupos[b])
       );
 
     if (!elegibles.length) continue;
@@ -106,7 +219,7 @@ function construirSolucion(
 function busquedaLocal(
   distribucion: Distribucion,
   plazasPorPersona: Record<string, number>,
-  pesos: Pesos
+  mat: MatrizPesos
 ): Opcion {
   const grupos: Distribucion = Object.fromEntries(
     Object.entries(distribucion).map(([g, m]) => [g, [...m]])
@@ -135,14 +248,18 @@ function busquedaLocal(
             const newPlazasB = plazasB - plazasPorPersona[pB] + plazasPorPersona[pA];
             if (Math.abs(newPlazasA - newPlazasB) > TOLERANCIA) continue;
 
+            // Punto 1 aplicado: restA y restB son los grupos sin la persona
+            // que sale. El delta solo mide los pares que CAMBIAN (los que
+            // involucran a pA o pB). Los pares internos restA↔restA y
+            // restB↔restB se cancelan en la resta y no hay que calcularlos.
             const restA = grupos[gA].filter((_, k) => k !== i);
             const restB = grupos[gB].filter((_, k) => k !== j);
 
             const delta =
-              costeIncremental(pB, restA, pesos) +
-              costeIncremental(pA, restB, pesos) -
-              costeIncremental(pA, restA, pesos) -
-              costeIncremental(pB, restB, pesos);
+              mat.costeIncremental(pB, restA) +
+              mat.costeIncremental(pA, restB) -
+              mat.costeIncremental(pA, restA) -
+              mat.costeIncremental(pB, restB);
 
             if (delta < 0) {
               grupos[gA][i] = pB;
@@ -155,7 +272,7 @@ function busquedaLocal(
     }
   }
 
-  const coef = Object.values(grupos).reduce((s, m) => s + costeGrupo(m, pesos), 0);
+  const coef = Object.values(grupos).reduce((s, m) => s + mat.costeGrupo(m), 0);
   return { distribucion: grupos, coef };
 }
 
@@ -166,15 +283,14 @@ function calcularCoefsPorPersona(
   tipo: string,
   idGeneracion: number,
   distribucion: Distribucion,
-  pesos: Pesos
+  mat: MatrizPesos
 ) {
   const filas = [];
   for (const [grupoStr, miembros] of Object.entries(distribucion)) {
     const idGrupo = Number(grupoStr);
     for (const persona of miembros) {
-      const coefs = miembros
-        .filter((m) => m !== persona)
-        .map((c) => peso(pesos, persona, c));
+      const resto = miembros.filter((m) => m !== persona);
+      const coefs = mat.pesosContra(persona, resto);
 
       filas.push({
         id_comunidad:    idComunidad,
@@ -244,19 +360,15 @@ export async function generateGroups(
   if (!numGrupos)
     return { ok: false, error: "Número de grupos no configurado" };
 
-  // ── Pesos en memoria ─────────────────────────────────────────────────────
-  const pesos: Pesos = {};
-  for (const row of pesosRaw ?? []) {
-    if (!pesos[row.id_persona]) pesos[row.id_persona] = {};
-    pesos[row.id_persona][row.id_pareja] = row.coef_repeticion ?? 0;
-  }
-
-  const mapaConflictividad = calcularConflictividad(personasRaw, pesos);
+  // ── Punto 2: construir matriz plana una sola vez ──────────────────────────
+  // A partir de aquí todo el algoritmo usa `mat` en lugar de `pesos`.
+  // La construcción es O(n²) pero ocurre una sola vez antes del bucle.
+  const mat = construirMatrizPesos(personasRaw, pesosRaw ?? []);
 
   const personas: Persona[] = personasRaw.map((p) => ({
     id:             p.id,
     numero:         p.numero,
-    conflictividad: mapaConflictividad[p.id] ?? 0,
+    conflictividad: mat.conflictividad(p.id),
   }));
 
   const plazasPorPersona: Record<string, number> = Object.fromEntries(
@@ -267,8 +379,8 @@ export async function generateGroups(
   const mejores: Opcion[] = [];
 
   for (let i = 0; i < ITERACIONES; i++) {
-    const distribucion = construirSolucion(personas, numGrupos, pesos);
-    const solucion = busquedaLocal(distribucion, plazasPorPersona, pesos);
+    const distribucion = construirSolucion(personas, numGrupos, mat);
+    const solucion = busquedaLocal(distribucion, plazasPorPersona, mat);
     mejores.push(solucion);
     mejores.sort((a, b) => a.coef - b.coef);
     if (mejores.length > TOP_N) mejores.pop();
@@ -294,7 +406,7 @@ export async function generateGroups(
 
     for (const distribucion of opcionesExistentes.values()) {
       const coef = Object.values(distribucion).reduce(
-        (s, m) => s + costeGrupo(m, pesos), 0
+        (s, m) => s + mat.costeGrupo(m), 0
       );
       mejores.push({ coef, distribucion });
     }
@@ -311,7 +423,7 @@ export async function generateGroups(
     .eq("tipo", tipo);
 
   const filas = mejores.flatMap((opcion, ranking) =>
-    calcularCoefsPorPersona(idComunidad, tipo, ranking + 1, opcion.distribucion, pesos)
+    calcularCoefsPorPersona(idComunidad, tipo, ranking + 1, opcion.distribucion, mat)
   );
 
   if (filas.length) {

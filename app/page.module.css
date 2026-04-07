@@ -1,0 +1,47 @@
+/* ─── Layout de página ────────────────────────────────────────────────────── */
+.pageWrapper {
+  width: 100%;
+  padding: 2rem 2rem 4rem;
+}
+
+/* ─── Grid de tarjetas ────────────────────────────────────────────────────── */
+.cardsGrid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 1.5rem;
+  align-items: start;
+}
+
+@media (max-width: 900px) {
+  .cardsGrid { grid-template-columns: repeat(2, 1fr); }
+}
+
+@media (max-width: 560px) {
+  .pageWrapper { padding: 1.2rem 1rem 3rem; }
+  .cardsGrid   { grid-template-columns: 1fr; }
+}
+
+/* ─── Grupos dentro de la tarjeta ────────────────────────────────────────── */
+.grupo { margin-bottom: 1.1rem; }
+
+.grupoHeader {
+  font-family: var(--font-display);
+  font-size: 0.85rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  margin-bottom: 0.3rem;
+}
+
+.grupoTable { width: 100%; border-collapse: collapse; }
+.grupoTable td {
+  padding: 0.35rem 0.6rem;
+  font-size: 0.92rem;
+  color: var(--color-text-heading);
+  border-bottom: 1px solid var(--color-border-inner);
+}
+.grupoTable tr:last-child td { border-bottom: none; }
+.grupoTable tr:hover td { background: var(--color-hover-row); }
+
+/* ─── Altura máxima del body de la tarjeta ────────────────────────────────── */
+.cardBodyScroll { max-height: 60vh; }

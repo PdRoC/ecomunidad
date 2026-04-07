@@ -3,44 +3,31 @@
 import { useState, useEffect } from "react";
 import { generateGroups, getGroupPreviews, type OpcionPreview } from "@/app/actions/generate-groups";
 import { createClient } from "@/lib/supabase/client";
+import styles from "./admin.module.css";
 
-// ─── Tipos locales ────────────────────────────────────────────────────────────
-
-type Celebracion = {
-  id_celebracion: string;
-  nombre: string;
-};
-
-// Mapa de repeticiones: "idA|idB" -> número de veces que han coincidido
+// ─── Tipos ────────────────────────────────────────────────────────────────────
+type Celebracion = { id_celebracion: string; nombre: string };
 type RepMap = Record<string, number>;
 
-// ─── Utilidades de color ──────────────────────────────────────────────────────
-
-/**
- * Clave canónica para un par (orden no importa).
- * La tabla puede tener la fila como (A→B) o (B→A); con esto cubrimos ambos.
- */
+// ─── Utilidades ───────────────────────────────────────────────────────────────
 function parKey(a: string, b: string): string {
   return a < b ? `${a}|${b}` : `${b}|${a}`;
 }
 
 // ─── Componente principal ─────────────────────────────────────────────────────
-
 export default function AdminPage() {
-  const [idComunidad, setIdComunidad]       = useState<string | null>(null);
-  const [celebraciones, setCelebraciones]   = useState<Celebracion[]>([]);
-  const [tipoSeleccionado, setTipoSelec]    = useState<string>("");
-  const [generando, setGenerando]           = useState(false);
-  const [cargandoPrev, setCargandoPrev]     = useState(false);
-  const [opciones, setOpciones]             = useState<OpcionPreview[]>([]);
-  const [mensaje, setMensaje]               = useState<{ ok: boolean; texto: string } | null>(null);
+  const [idComunidad, setIdComunidad]     = useState<string | null>(null);
+  const [celebraciones, setCelebraciones] = useState<Celebracion[]>([]);
+  const [tipoSeleccionado, setTipoSelec]  = useState<string>("");
+  const [generando, setGenerando]         = useState(false);
+  const [cargandoPrev, setCargandoPrev]   = useState(false);
+  const [opciones, setOpciones]           = useState<OpcionPreview[]>([]);
+  const [mensaje, setMensaje]             = useState<{ ok: boolean; texto: string } | null>(null);
+  const [repMap, setRepMap]               = useState<RepMap>({});
+  const [globalMax, setGlobalMax]         = useState(0);
+  const [globalMin, setGlobalMin]         = useState(0);
 
-  // Datos de emparejamientos
-  const [repMap, setRepMap]                 = useState<RepMap>({});
-  const [globalMax, setGlobalMax]           = useState<number>(0);
-  const [globalMin, setGlobalMin]           = useState<number>(0);
-
-  // ── Cargar comunidad del usuario y sus celebraciones ─────────────────────
+  // ── Cargar comunidad y celebraciones ──────────────────────────────────────
   useEffect(() => {
     async function cargar() {
       const supabase = createClient();
@@ -74,7 +61,6 @@ export default function AdminPage() {
     cargar();
   }, []);
 
-  // ── Cargar previsualización al cambiar de tipo ────────────────────────────
   useEffect(() => {
     if (!idComunidad || !tipoSeleccionado) return;
     cargarPrevisualizacion();
@@ -83,24 +69,16 @@ export default function AdminPage() {
   async function cargarPrevisualizacion() {
     if (!idComunidad || !tipoSeleccionado) return;
     setCargandoPrev(true);
-
-    // Cargar opciones y emparejamientos en paralelo
     const [result] = await Promise.all([
       getGroupPreviews(idComunidad, tipoSeleccionado),
       cargarEmparejamientos(idComunidad),
     ]);
-
     if (result.ok) setOpciones(result.data ?? []);
     setCargandoPrev(false);
   }
 
-  /**
-   * Carga toda la tabla aux_coef_emparejamientos para la comunidad,
-   * construye el mapa de repeticiones y calcula el máximo y mínimo globales.
-   */
   async function cargarEmparejamientos(comunidad: string) {
     const supabase = createClient();
-
     const { data, error } = await supabase
       .from("aux_coef_emparejamientos")
       .select("id_persona, id_pareja, coef_repeticion")
@@ -113,10 +91,8 @@ export default function AdminPage() {
     let min = Infinity;
 
     for (const row of data) {
-      // Usamos clave canónica para que (A,B) y (B,A) apunten al mismo valor
       const key = parKey(row.id_persona, row.id_pareja);
       const coef = row.coef_repeticion ?? 0;
-      // Si la tabla tiene ambas direcciones, nos quedamos con el mayor
       if (map[key] === undefined || coef > map[key]) map[key] = coef;
       if (coef > max) max = coef;
       if (coef < min) min = coef;
@@ -127,40 +103,23 @@ export default function AdminPage() {
     setGlobalMin(min === Infinity  ? 0 : min);
   }
 
-  /**
-   * Para una persona dentro de un grupo, devuelve la clase de color
-   * según el coef con cada compañero individualmente, con prioridad:
-   *   rojo > azul > amarillo > verde
-   *
-   *  - Algún par alcanza el máximo global       → rojo
-   *  - Algún par está en el mínimo global        → azul
-   *  - Algún par está en máximo − 1              → amarillo
-   *  - Resto                                     → verde
-   */
-  function colorPersonaEnGrupo(
-    idPersona: string,
-    compañeros: { id: string }[],
-  ): string {
-    let tieneRojo     = false;
-    let tieneAzul     = false;
-    let tieneAmarillo = false;
+  function colorPersonaEnGrupo(idPersona: string, compañeros: { id: string }[]): string {
+    let tieneRojo = false, tieneAzul = false, tieneAmarillo = false;
 
     for (const c of compañeros) {
       if (c.id === idPersona) continue;
       const coef = repMap[parKey(idPersona, c.id)] ?? 0;
-
-      if (coef >= globalMax)           tieneRojo     = true;
-      else if (coef <= globalMin)      tieneAzul     = true;
-      else if (coef === globalMax - 1) tieneAmarillo = true;
+      if      (coef >= globalMax)           tieneRojo     = true;
+      else if (coef <= globalMin)           tieneAzul     = true;
+      else if (coef === globalMax - 1)      tieneAmarillo = true;
     }
 
-    if (tieneRojo)     return "bg-red-100 text-red-700 ring-1 ring-red-300";
-    if (tieneAzul)     return "bg-blue-100 text-blue-700 ring-1 ring-blue-300";
-    if (tieneAmarillo) return "bg-amber-100 text-amber-700 ring-1 ring-amber-300";
-    return "bg-green-100 text-green-700 ring-1 ring-green-300";
+    if (tieneRojo)     return styles.badgeRojo;
+    if (tieneAzul)     return styles.badgeAzul;
+    if (tieneAmarillo) return styles.badgeAmarillo;
+    return styles.badgeVerde;
   }
 
-  // ── Generar grupos ────────────────────────────────────────────────────────
   async function handleGenerar() {
     if (!idComunidad || !tipoSeleccionado) return;
     setGenerando(true);
@@ -178,30 +137,25 @@ export default function AdminPage() {
   }
 
   // ─── Render ───────────────────────────────────────────────────────────────
-
   return (
-    <main className="min-h-screen bg-gray-50 p-6">
-      <div className="mx-auto max-w-5xl space-y-6">
+    <main className={styles.pageWrapper}>
+      <div className={styles.inner}>
 
         {/* Cabecera */}
-        <div>
-          <h1 className="text-2xl font-semibold text-gray-900">Generación de grupos</h1>
-          <p className="text-sm text-gray-500 mt-1">
-            Selecciona el tipo de celebración y genera las propuestas de distribución.
-          </p>
-        </div>
+        <header className="page-header">
+          <h1>Generación de grupos</h1>
+          <p>Selecciona el tipo de celebración y genera las propuestas de distribución</p>
+        </header>
 
-        {/* Selector de celebración + botón */}
-        <div className="flex flex-wrap items-end gap-4">
-          <div className="flex flex-col gap-1">
-            <label className="text-sm font-medium text-gray-700">
-              Tipo de celebración
-            </label>
+        {/* Selector + botón */}
+        <div className={styles.controls}>
+          <div className={styles.fieldGroup}>
+            <label className={styles.label}>Tipo de celebración</label>
             <select
               value={tipoSeleccionado}
               onChange={(e) => setTipoSelec(e.target.value)}
               disabled={generando}
-              className="rounded-md border border-gray-300 bg-white px-3 py-2 text-sm shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50"
+              className={styles.select}
             >
               {celebraciones.map((c) => (
                 <option key={c.id_celebracion} value={c.id_celebracion}>
@@ -214,91 +168,60 @@ export default function AdminPage() {
           <button
             onClick={handleGenerar}
             disabled={generando || !tipoSeleccionado}
-            className="rounded-md bg-blue-600 px-5 py-2 text-sm font-medium text-white shadow-sm hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+            className={styles.btnGenerar}
           >
             {generando ? "Generando…" : "Generar grupos"}
           </button>
         </div>
 
-        {/* Leyenda de colores */}
+        {/* Leyenda */}
         {opciones.length > 0 && (
-          <div className="flex flex-wrap gap-3 text-xs">
-            <span className="inline-flex items-center rounded-full px-2.5 py-1 bg-red-100 text-red-700 ring-1 ring-red-300 font-semibold">
-              Máxima repetición
-            </span>
-            <span className="inline-flex items-center rounded-full px-2.5 py-1 bg-amber-100 text-amber-700 ring-1 ring-amber-300 font-semibold">
-              Repetición alta (máx − 1)
-            </span>
-            <span className="inline-flex items-center rounded-full px-2.5 py-1 bg-green-100 text-green-700 ring-1 ring-green-300 font-semibold">
-              Repetición normal
-            </span>
-            <span className="inline-flex items-center rounded-full px-2.5 py-1 bg-blue-100 text-blue-700 ring-1 ring-blue-300 font-semibold">
-              Mínima repetición
-            </span>
+          <div className={styles.leyenda}>
+            <span className={`${styles.badge} ${styles.badgeRojo}`}>Máxima repetición</span>
+            <span className={`${styles.badge} ${styles.badgeAmarillo}`}>Repetición alta (máx − 1)</span>
+            <span className={`${styles.badge} ${styles.badgeVerde}`}>Repetición normal</span>
+            <span className={`${styles.badge} ${styles.badgeAzul}`}>Mínima repetición</span>
           </div>
         )}
 
-        {/* Mensaje de resultado */}
+        {/* Mensaje */}
         {mensaje && (
-          <div
-            className={`rounded-md px-4 py-3 text-sm ${
-              mensaje.ok
-                ? "bg-green-50 text-green-800 border border-green-200"
-                : "bg-red-50 text-red-800 border border-red-200"
-            }`}
-          >
+          <div className={mensaje.ok ? styles.mensajeOk : styles.mensajeErr}>
             {mensaje.texto}
           </div>
         )}
 
-        {/* Previsualización */}
+        {/* Loading */}
         {cargandoPrev && (
-          <p className="text-sm text-gray-400">Cargando propuestas…</p>
+          <p className={styles.cargando}>Cargando propuestas…</p>
         )}
 
+        {/* Opciones */}
         {!cargandoPrev && opciones.length > 0 && (
-          <div className="space-y-6">
+          <div className={styles.opcionesList}>
             {opciones.map((opcion) => (
-              <div
-                key={opcion.idGeneracion}
-                className="rounded-lg border border-gray-200 bg-white shadow-sm overflow-hidden"
-              >
-                {/* Cabecera de la opción */}
-                <div className="flex items-center justify-between px-4 py-3 bg-gray-100 border-b border-gray-200">
-                  <span className="text-sm font-semibold text-gray-700">
-                    Opción {opcion.idGeneracion}
-                  </span>
-                  <span className="text-xs text-gray-400">
-                    Coef. total: {opcion.coefTotal}
-                  </span>
+              <div key={opcion.idGeneracion} className={styles.opcionCard}>
+                <div className={styles.opcionHeader}>
+                  <span className={styles.opcionTitle}>Opción {opcion.idGeneracion}</span>
+                  <span className={styles.opcionCoef}>Coef. total: {opcion.coefTotal}</span>
                 </div>
-
-                {/* Grupos en columnas — scroll horizontal en móvil */}
-                <div className="overflow-x-auto">
+                <div className={styles.gruposScroll}>
                   <div
-                    className="flex gap-3 p-4"
+                    className={styles.gruposRow}
                     style={{ minWidth: `${opcion.grupos.length * 160}px` }}
                   >
                     {opcion.grupos.map((grupo) => (
-                      <div key={grupo.idGrupo} className="flex-1 min-w-[140px]">
-                        <p className="text-xs font-semibold uppercase tracking-wide text-gray-400 mb-2">
-                          Grupo {grupo.idGrupo}
-                        </p>
-                        <ul className="space-y-1">
-                          {grupo.personas.map((p) => {
-                            const claseColor = colorPersonaEnGrupo(p.id, grupo.personas);
-                            return (
-                              <li
-                                key={p.id}
-                                className="flex items-center justify-between rounded-md bg-gray-50 px-2 py-1.5 text-sm gap-1"
-                              >
-                                <span className="text-gray-800 truncate">{p.nombre}</span>
-                                <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-semibold shrink-0 ${claseColor}`}>
-                                  {p.coef}
-                                </span>
-                              </li>
-                            );
-                          })}
+                      <div key={grupo.idGrupo} className={styles.grupoCol}>
+                        <p className={styles.grupoLabel}>Grupo {grupo.idGrupo}</p>
+                        <ul className={styles.personasList}>
+                          {grupo.personas.map((p) => (
+                            <li key={p.id} className={styles.personaItem}>
+                              <span className={styles.personaNombre}>{p.nombre}</span>
+                              <span className={`${styles.coefBadge} ${colorPersonaEnGrupo(p.id, grupo.personas)}`}>
+                                {p.coef}
+                              </span>
+                            </li>
+                          ))}
                         </ul>
                       </div>
                     ))}
@@ -309,8 +232,9 @@ export default function AdminPage() {
           </div>
         )}
 
+        {/* Empty state */}
         {!cargandoPrev && opciones.length === 0 && !generando && tipoSeleccionado && (
-          <p className="text-sm text-gray-400">
+          <p className="empty-msg">
             No hay propuestas guardadas para esta celebración. Pulsa «Generar grupos» para crearlas.
           </p>
         )}
